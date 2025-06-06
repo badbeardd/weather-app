@@ -3,22 +3,33 @@ from httpx import AsyncClient
 import os
 from app.db import mongo
 from datetime import datetime
+import httpx
 
 data_collection = mongo.data_collection
 
 OPENWEATHER_API_KEY = os.getenv("OPENWEATHER_API_KEY")
 
-def get_query_param(location):
-    if location.isdigit():
-        return f"zip={location}"
-    elif "," in location and all(p.replace(".", "", 1).replace("-", "", 1).isdigit() for p in location.split(",")):
+import httpx  # for consistent async usage
+
+async def get_query_param(location):
+    # Detect if it's a lat,lon string
+    if "," in location and all(p.replace(".", "", 1).replace("-", "", 1).isdigit() for p in location.split(",")):
         lat, lon = location.split(",")
         return f"lat={lat}&lon={lon}"
-    else:
-        return f"q={location},in"
+
+    # Else geocode the location
+    async with httpx.AsyncClient() as client:
+        geo_url = "http://api.openweathermap.org/geo/1.0/direct"
+        resp = await client.get(geo_url, params={"q": location, "limit": 1, "appid": OPENWEATHER_API_KEY})
+        geo = resp.json()
+        if not geo:
+            raise HTTPException(status_code=404, detail="Location not found")
+        lat, lon = geo[0]["lat"], geo[0]["lon"]
+        return f"lat={lat}&lon={lon}"
+
 
 async def create_weather_entry(entry):
-    query_param = get_query_param(entry.location)
+    query_param = await get_query_param(entry.location)
     url = f"https://api.openweathermap.org/data/2.5/forecast?{query_param}&appid={OPENWEATHER_API_KEY}&units=metric"
 
     async with AsyncClient() as client:

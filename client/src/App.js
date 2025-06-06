@@ -1,9 +1,7 @@
-// Clean, updated, professional UI with background and enhanced layout
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
-
+import { jsPDF } from 'jspdf';
 function App() {
   const [location, setLocation] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -12,6 +10,8 @@ function App() {
   const [editMode, setEditMode] = useState(null);
   const [editedTemp, setEditedTemp] = useState('');
   const [editedCondition, setEditedCondition] = useState('');
+  const [videoId, setVideoId] = useState('');
+  const [coords, setCoords] = useState({ lat: null, lon: null });
 
   const handleShowEntries = () => {
     setTimeout(() => {
@@ -35,6 +35,13 @@ function App() {
   };
 
   const fetchWeather = async () => {
+    const s = new Date(startDate);
+    const e = new Date(endDate);
+    if (!startDate || !endDate || s > e) {
+      alert("Invalid date range. Ensure both dates are set and Start ≤ End.");
+      return;
+    }
+
     try {
       const res = await axios.post('http://localhost:8000/weather', {
         location,
@@ -48,6 +55,42 @@ function App() {
       alert(msg);
     }
   };
+
+
+   const detectCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(async (position) => {
+      const { latitude, longitude } = position.coords; // Extract latitude and longitude
+
+      try {
+        const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+        setLocation(res.data.address.city || res.data.address.town || res.data.address.village || '');
+        setCoords({ lat: latitude, lon: longitude }); // Update the coords state
+      } catch (err) {
+        console.error("Failed to reverse geocode", err);
+        alert("Could not determine city from coordinates");
+      }
+    }, (error) => {
+      console.error("Error getting location", error);
+      alert("Failed to get current location.");
+    });
+  };
+
+  const geocodeLocation = async (locName) => {
+  try {
+    const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locName)}`);
+    if (res.data.length > 0) {
+      const { lat, lon } = res.data[0];
+      setCoords({ lat: parseFloat(lat), lon: parseFloat(lon) });
+    }
+  } catch (err) {
+    console.error("Failed to geocode searched location", err);
+  }
+};
+
 
   const deleteEntry = async (location, date) => {
     try {
@@ -75,6 +118,84 @@ function App() {
     }
   };
 
+  const embedMapURL = (coords.lat && coords.lon)
+    ? `https://www.openstreetmap.org/export/embed.html?bbox=${coords.lon-0.05},${coords.lat-0.05},${coords.lon+0.05},${coords.lat+0.05}&layer=mapnik&marker=${coords.lat},${coords.lon}`
+    : '';
+
+
+const fetchVideoFromPiped = async (query) => {
+  try {
+    const res = await axios.get(`https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(query)}`);
+    const videos = res.data?.videos || []; // corrected
+    if (videos.length > 0) {
+      const firstValid = videos.find(v => v.url?.includes('/watch?v='));
+      if (firstValid) {
+        const id = firstValid.url.split('/watch?v=')[1]; // get the actual video ID
+        setVideoId(id);
+      }
+    }
+  } catch (err) {
+    console.error("Failed to fetch video from Piped", err);
+  }
+};
+
+
+useEffect(() => {
+  if (location) {
+    fetchVideoFromPiped(`${location} weather forecast`);
+    geocodeLocation(location); // <-- add this here
+  }
+}, [location]);
+
+  const embedYouTubeURL = videoId ? `https://www.youtube.com/embed/${videoId}` : '';
+
+  const exportAsJSON = () => {
+    const blob = new Blob([JSON.stringify(storedData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    downloadFile(url, 'weather.json');
+  };
+
+  const exportAsXML = () => {
+    let xml = '<?xml version="1.0"?>\n<weatherData>\n';
+    storedData.forEach(entry => {
+      xml += `  <entry>\n    <location>${entry.location}</location>\n    <date>${entry.date}</date>\n    <temperature>${entry.temperature}</temperature>\n    <condition>${entry.condition}</condition>\n  </entry>\n`;
+    });
+    xml += '</weatherData>';
+    const blob = new Blob([xml], { type: 'application/xml' });
+    const url = URL.createObjectURL(blob);
+    downloadFile(url, 'weather.xml');
+  };
+
+  const exportAsMarkdown = () => {
+    let md = '| Location | Date | Temp (°C) | Condition |\n|----------|------|------------|-----------|\n';
+    storedData.forEach(e => {
+      md += `| ${e.location} | ${e.date} | ${e.temperature} | ${e.condition} |\n`;
+    });
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    downloadFile(url, 'weather.md');
+  };
+
+  const exportAsPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(12);
+    doc.text('Weather Data', 10, 10);
+    let y = 20;
+    storedData.forEach((e, idx) => {
+      doc.text(`${idx + 1}. ${e.location} - ${e.date} - ${e.temperature}°C - ${e.condition}`, 10, y);
+      y += 8;
+    });
+    doc.save('weather.pdf');
+  };
+
+  const downloadFile = (url, filename) => {
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 p-6">
       <div className="max-w-5xl mx-auto">
@@ -92,6 +213,9 @@ function App() {
                 className="w-full border rounded px-3 py-2"
                 placeholder="City, Zip, or Lat,Lon"
               />
+              <button onClick={detectCurrentLocation} className="mt-2 text-sm text-blue-600 hover:underline">
+                Use Current Location
+              </button>
             </div>
             <div>
               <label className="block font-semibold mb-1">Start Date</label>
@@ -108,6 +232,27 @@ function App() {
             <button onClick={handleShowEntries} className="bg-gray-700 text-white px-5 py-2 rounded hover:bg-gray-800">Show Stored Entries</button>
           </div>
         </div>
+
+        {location && (
+          <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+            <iframe
+              className="w-full h-64 rounded shadow"
+              src={embedMapURL}
+              allowFullScreen
+              loading="lazy"
+              title="OpenStreetMap Location"
+            ></iframe>
+            {embedYouTubeURL && (
+              <iframe
+                className="w-full h-64 rounded shadow"
+                src={embedYouTubeURL}
+                title="Weather Video"
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              ></iframe>
+            )}
+          </div>
+        )}
 
         {storedData.length > 0 && (
           <div className="bg-white shadow-md rounded-lg p-6">
@@ -162,7 +307,18 @@ function App() {
             </div>
           </div>
         )}
+
+        <footer className="mt-12 text-center text-sm text-gray-600">
+          Built by <strong>Suraj Kumar Singh</strong>. Learn more about the <a href="https://www.linkedin.com/school/pmaccelerator/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">Product Manager Accelerator</a>.
+        </footer>
       </div>
+        <div className="flex justify-center gap-3 mt-6">
+          <button onClick={exportAsJSON} className="px-4 py-2 bg-yellow-500 text-white rounded">Export JSON</button>
+          <button onClick={exportAsXML} className="px-4 py-2 bg-blue-500 text-white rounded">Export XML</button>
+          <button onClick={exportAsMarkdown} className="px-4 py-2 bg-green-500 text-white rounded">Export MD</button>
+          <button onClick={exportAsPDF} className="px-4 py-2 bg-red-500 text-white rounded">Export PDF</button>
+        </div>
+
     </div>
   );
 }
