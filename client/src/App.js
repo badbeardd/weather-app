@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect,useRef  } from 'react';
 import axios from 'axios';
 import 'leaflet/dist/leaflet.css';
 import { jsPDF } from 'jspdf';
+
 function App() {
   const [location, setLocation] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -10,9 +11,10 @@ function App() {
   const [editMode, setEditMode] = useState(null);
   const [editedTemp, setEditedTemp] = useState('');
   const [editedCondition, setEditedCondition] = useState('');
-  const [videoId, setVideoId] = useState('');
   const [coords, setCoords] = useState({ lat: null, lon: null });
-
+  const [loadingImages, setLoadingImages] = useState(false);
+  const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const imageCache = useRef({});  // Keeps previously fetched results
   const handleShowEntries = () => {
     setTimeout(() => {
       fetchStoredData();
@@ -121,33 +123,43 @@ function App() {
   const embedMapURL = (coords.lat && coords.lon)
     ? `https://www.openstreetmap.org/export/embed.html?bbox=${coords.lon-0.05},${coords.lat-0.05},${coords.lon+0.05},${coords.lat+0.05}&layer=mapnik&marker=${coords.lat},${coords.lon}`
     : '';
+  const [photos, setPhotos] = useState([]);
 
+  const fetchUnsplashImages = async (query) => {
+  if (imageCache.current[query]) {
+    setPhotos(imageCache.current[query]);
+    setCurrentImageIndex(0);
+    return;
+  }
 
-const fetchVideoFromPiped = async (query) => {
+  setLoadingImages(true);
   try {
-    const res = await axios.get(`https://pipedapi.kavin.rocks/search?q=${encodeURIComponent(query)}`);
-    const videos = res.data?.videos || []; // corrected
-    if (videos.length > 0) {
-      const firstValid = videos.find(v => v.url?.includes('/watch?v='));
-      if (firstValid) {
-        const id = firstValid.url.split('/watch?v=')[1]; // get the actual video ID
-        setVideoId(id);
-      }
-    }
+    const res = await axios.get('https://api.unsplash.com/search/photos', {
+      params: { query, per_page: 10 },
+      headers: {
+        Authorization: `Client-ID ${process.env.REACT_APP_UNSPLASH_KEY}`,
+      },
+    });
+    imageCache.current[query] = res.data.results;
+    setPhotos(res.data.results);
+    setCurrentImageIndex(0);
   } catch (err) {
-    console.error("Failed to fetch video from Piped", err);
+    console.error('Error fetching Unsplash images:', err.response?.data || err.message);
+  } finally {
+    setLoadingImages(false);
   }
 };
 
 
-useEffect(() => {
-  if (location) {
-    fetchVideoFromPiped(`${location} weather forecast`);
-    geocodeLocation(location); // <-- add this here
-  }
-}, [location]);
 
-  const embedYouTubeURL = videoId ? `https://www.youtube.com/embed/${videoId}` : '';
+
+    useEffect(() => {
+      if (location) {
+        geocodeLocation(location); // <-- add this here
+        fetchUnsplashImages(location);
+      }
+    }, [location]);
+
 
   const exportAsJSON = () => {
     const blob = new Blob([JSON.stringify(storedData, null, 2)], { type: 'application/json' });
@@ -234,25 +246,51 @@ useEffect(() => {
         </div>
 
         {location && (
-          <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
-            <iframe
-              className="w-full h-64 rounded shadow"
-              src={embedMapURL}
-              allowFullScreen
-              loading="lazy"
-              title="OpenStreetMap Location"
-            ></iframe>
-            {embedYouTubeURL && (
-              <iframe
-                className="w-full h-64 rounded shadow"
-                src={embedYouTubeURL}
-                title="Weather Video"
-                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                allowFullScreen
-              ></iframe>
-            )}
-          </div>
-        )}
+  <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+    <iframe
+      className="w-full h-64 rounded shadow"
+      src={embedMapURL}
+      allowFullScreen
+      loading="lazy"
+      title="OpenStreetMap Location"
+    ></iframe>
+
+    {loadingImages ? (
+      <div className="text-center text-gray-500 col-span-full">Loading images...</div>
+    ) : photos.length > 0 ? (
+      <div className="relative w-full h-64 rounded shadow overflow-hidden">
+        <img
+          src={photos[currentImageIndex].urls.regular}
+          alt={photos[currentImageIndex].alt_description || 'Location image'}
+          className="w-full h-full object-cover transform hover:scale-105 transition duration-300 ease-in-out"
+        />
+        <div className="absolute top-1/2 transform -translate-y-1/2 w-full flex justify-between px-4">
+          <button
+            onClick={() => setCurrentImageIndex((prev) => (prev > 0 ? prev - 1 : photos.length - 1))}
+            className="bg-white bg-opacity-80 hover:bg-opacity-100 px-3 py-1 rounded-full shadow text-xl"
+          >
+            ◀
+          </button>
+          <button
+            onClick={() => setCurrentImageIndex((prev) => (prev + 1) % photos.length)}
+            className="bg-white bg-opacity-80 hover:bg-opacity-100 px-3 py-1 rounded-full shadow text-xl"
+          >
+            ▶
+          </button>
+        </div>
+        <div className="absolute bottom-2 left-0 right-0 text-center text-sm text-white bg-black bg-opacity-50 py-1">
+          {photos[currentImageIndex].description || photos[currentImageIndex].alt_description || 'Untitled'}
+        </div>
+      </div>
+    ) : (
+      <div className="text-center text-gray-500 col-span-full">
+        No images available for "{location}"
+      </div>
+    )}
+  </div>
+)}
+
+
 
         {storedData.length > 0 && (
           <div className="bg-white shadow-md rounded-lg p-6">
