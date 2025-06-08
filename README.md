@@ -28,17 +28,23 @@ APIs Used: OpenWeatherMap, Unsplash, OpenStreetMap
 git clone https://github.com/badbeardd/weather-app.git
 cd weather-app
 
-2. Configure environment variables
-Create a .env file in the client/ directory with the following content:
+2. Configure Environment Variables
+Create .env files in both the client/ and server/ directories. These files are crucial for securely storing your API keys and database connection string.
+
+client/.env:
+This file is required for the frontend to access the OpenWeatherMap, Unsplash, and Geoapify APIs directly.
 
 REACT_APP_WEATHER_API_KEY=your_openweathermap_api_key
 REACT_APP_UNSPLASH_KEY=your_unsplash_access_key
+REACT_APP_GEOAPIFY_KEY=your_geoapify_access_key
 
-This file is required for the frontend to access OpenWeatherMap and Unsplash APIs.
+server/.env:
+This file is required for the backend to access the OpenWeatherMap API and connect to MongoDB.
 
-MongoDB URI is already configured for local development in the backend:
+OPENWEATHER_API_KEY=your_openweathermap_api_key
+MONGO_URI=mongodb://localhost:27017/Weatherapp
 
-mongodb://localhost:27017/Weatherapp
+Remember to replace your_openweathermap_api_key, your_unsplash_access_key, and your_geoapify_access_key with your actual API keys.
 
 3. Start the backend (FastAPI)
 source venv/Scripts/activate
@@ -65,8 +71,11 @@ weather-app/
 
 client/.env
 REACT_APP_UNSPLASH_KEY=your_unsplash_access_key
+REACT_APP_GEOAPIFY_KEY=your_geoapify_access_key
+
 server/.env
 OPENWEATHER_API_KEY=your_openweathermap_key
+MONGO_URI=mongodb://localhost:27017/Weatherapp
 
 📤 Export Formats
 From the UI, you can export stored weather data as:

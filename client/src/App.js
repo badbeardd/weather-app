@@ -17,48 +17,60 @@ function App() {
   const [displayLocation, setDisplayLocation] = useState('');
 
   const imageCache = useRef({});  // Keeps previously fetched results
-  const handleShowEntries = () => {
-    setTimeout(() => {
-      fetchStoredData();
-    }, 100);
-  };
+const handleShowEntries = () => {
+  const queryLocation = coords.lat && coords.lon
+    ? `${coords.lat},${coords.lon}`
+    : location;
 
-  const fetchStoredData = async () => {
-    try {
-      const res = await axios.get('http://localhost:8000/weather/search', {
-        params: {
-          location,
-          start_date: startDate,
-          end_date: endDate,
-        },
-      });
-      setStoredData(res.data);
-    } catch (err) {
-      console.error("Failed to fetch stored data", err);
-    }
-  };
+  setTimeout(() => {
+    fetchStoredData(queryLocation);
+  }, 100);
+};
 
-  const fetchWeather = async () => {
-    const s = new Date(startDate);
-    const e = new Date(endDate);
-    if (!startDate || !endDate || s > e) {
-      alert("Invalid date range. Ensure both dates are set and Start ≤ End.");
-      return;
-    }
 
-    try {
-      const res = await axios.post('http://localhost:8000/weather', {
-        location,
+  const fetchStoredData = async (loc) => {
+  try {
+    const res = await axios.get('http://localhost:8000/weather/search', {
+      params: {
+        location: loc,
         start_date: startDate,
         end_date: endDate,
-      });
-      alert(`Stored ${res.data.inserted} entries for ${location}`);
-    } catch (err) {
-      const msg = err.response?.data?.detail || "Failed to fetch or store weather data.";
-      console.error("Backend fetch failed", err);
-      alert(msg);
-    }
-  };
+      },
+    });
+    setStoredData(res.data);
+  } catch (err) {
+    console.error("Failed to fetch stored data", err);
+  }
+};
+
+
+const fetchWeather = async () => {
+  const s = new Date(startDate);
+  const e = new Date(endDate);
+  if (!startDate || !endDate || s > e) {
+    alert("Invalid date range. Ensure both dates are set and Start ≤ End.");
+    return;
+  }
+
+  // Prefer coordinates if available (useful for pin codes or accurate matches)
+  const queryLocation = coords.lat && coords.lon 
+    ? `${coords.lat},${coords.lon}` 
+    : location;
+
+  try {
+    const res = await axios.post('http://localhost:8000/weather', {
+      location: queryLocation,
+      start_date: startDate,
+      end_date: endDate,
+    });
+    alert(`Stored ${res.data.inserted} entries for ${queryLocation}`);
+  } catch (err) {
+    const msg = err.response?.data?.detail || "Failed to fetch or store weather data.";
+    console.error("Backend fetch failed", err);
+    alert(msg);
+  }
+};
+
 
 
    const detectCurrentLocation = () => {
@@ -82,18 +94,6 @@ function App() {
       alert("Failed to get current location.");
     });
   };
-
-  const geocodeLocation = async (locName) => {
-  try {
-    const res = await axios.get(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locName)}`);
-    if (res.data.length > 0) {
-      const { lat, lon } = res.data[0];
-      setCoords({ lat: parseFloat(lat), lon: parseFloat(lon) });
-    }
-  } catch (err) {
-    console.error("Failed to geocode searched location", err);
-  }
-};
 
 
   const deleteEntry = async (location, date) => {
@@ -159,30 +159,71 @@ useEffect(() => {
   if (!location) return;
 
   const fetchImages = async () => {
-    const isCoordinates = location.includes(",") && location.split(",").length === 2;
+    const isCoordinates = /^-?\d+(\.\d+)?,-?\d+(\.\d+)?$/.test(location.trim());
 
     if (isCoordinates) {
       const [lat, lon] = location.split(",");
+      const parsedLat = parseFloat(lat);
+      const parsedLon = parseFloat(lon);
+      // ✅ Add this to fix the map display
+      setCoords({ lat: parsedLat, lon: parsedLon });
+
       try {
-        const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-        const placeName = res.data.address.city || res.data.address.town || res.data.address.village || res.data.address.country;
-        setDisplayLocation(placeName || location); // set fallback
+    const res = await axios.get(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${parsedLat}&lon=${parsedLon}`
+    );
+
+        const placeName =
+          res.data.address.city ||
+          res.data.address.town ||
+          res.data.address.village ||
+          res.data.address.state ||
+          res.data.address.country;
+
+        setDisplayLocation(placeName || location);
         fetchUnsplashImages(placeName || location);
       } catch (err) {
         console.error("Reverse geocoding failed:", err);
-        setDisplayLocation(location); // fallback
+        setDisplayLocation(location);
         fetchUnsplashImages("nature");
       }
     } else {
-      setDisplayLocation(location);
-      fetchUnsplashImages(location);
-    }
+      try {
+        const query = encodeURIComponent(location.trim());
+        const geoKey = process.env.REACT_APP_GEOAPIFY_KEY;
+        console.log("🔑 Geoapify API Key:", geoKey);
 
-    geocodeLocation(location);
+        const res = await axios.get(
+          `https://api.geoapify.com/v1/geocode/search?text=${query}&apiKey=${geoKey}`
+        );
+
+        if (res.data.features.length > 0) {
+          const props = res.data.features[0].properties;
+          console.log("📦 Geoapify result:", props);
+
+          const lat = props.lat || res.data.features[0].geometry.coordinates[1];
+          const lon = props.lon || res.data.features[0].geometry.coordinates[0];
+          setCoords({ lat, lon });
+
+          const name = props.city || props.state_district || props.state || location;
+          console.log("🔑 Geoapify name:", name);
+          setDisplayLocation(name);
+          fetchUnsplashImages(name);
+        } else {
+          setDisplayLocation(location);
+          fetchUnsplashImages("nature");
+        }
+      } catch (err) {
+        console.error("Geoapify lookup failed:", err);
+        setDisplayLocation(location);
+        fetchUnsplashImages("nature");
+      }
+    }
   };
 
   fetchImages();
 }, [location]);
+
 
 
 
