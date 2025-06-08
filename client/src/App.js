@@ -14,6 +14,8 @@ function App() {
   const [coords, setCoords] = useState({ lat: null, lon: null });
   const [loadingImages, setLoadingImages] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [displayLocation, setDisplayLocation] = useState('');
+
   const imageCache = useRef({});  // Keeps previously fetched results
   const handleShowEntries = () => {
     setTimeout(() => {
@@ -153,12 +155,36 @@ function App() {
 
 
 
-    useEffect(() => {
-      if (location) {
-        geocodeLocation(location); // <-- add this here
-        fetchUnsplashImages(location);
+useEffect(() => {
+  if (!location) return;
+
+  const fetchImages = async () => {
+    const isCoordinates = location.includes(",") && location.split(",").length === 2;
+
+    if (isCoordinates) {
+      const [lat, lon] = location.split(",");
+      try {
+        const res = await axios.get(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+        const placeName = res.data.address.city || res.data.address.town || res.data.address.village || res.data.address.country;
+        setDisplayLocation(placeName || location); // set fallback
+        fetchUnsplashImages(placeName || location);
+      } catch (err) {
+        console.error("Reverse geocoding failed:", err);
+        setDisplayLocation(location); // fallback
+        fetchUnsplashImages("nature");
       }
-    }, [location]);
+    } else {
+      setDisplayLocation(location);
+      fetchUnsplashImages(location);
+    }
+
+    geocodeLocation(location);
+  };
+
+  fetchImages();
+}, [location]);
+
+
 
 
   const exportAsJSON = () => {
@@ -309,7 +335,7 @@ function App() {
                 <tbody>
                   {storedData.map((item, idx) => (
                     <tr key={idx} className="hover:bg-gray-50">
-                      <td className="border px-4 py-2">{item.location}</td>
+                      <td className="border px-4 py-2">{displayLocation || item.location}</td>
                       <td className="border px-4 py-2">{item.date}</td>
                       <td className="border px-4 py-2">
                         {editMode === idx ? (

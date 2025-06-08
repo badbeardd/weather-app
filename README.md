@@ -41,6 +41,7 @@ MongoDB URI is already configured for local development in the backend:
 mongodb://localhost:27017/Weatherapp
 
 3. Start the backend (FastAPI)
+source venv/Scripts/activate
 cd server
 uvicorn main:app --reload
 
@@ -55,18 +56,17 @@ npm start
 
 Visit http://localhost:3000 in your browser.
 
-📂 Folder Structure
 weather-app/
-├── client/           # React frontend
-│   └── .env          # Contains API keys
-├── server/           # FastAPI backend
-│   └── main.py       # App entry point
+├── client/
+│   └── .env                 ✅ contains REACT_APP_* keys
+├── server/
+│   └── .env                 ✅ contains MONGO_URI, OPENWEATHER_API_KEY
 
-📄 Environment Example
-This is the content of the .env file you should place inside the client/ folder:
 
-REACT_APP_WEATHER_API_KEY=your_openweathermap_api_key
+client/.env
 REACT_APP_UNSPLASH_KEY=your_unsplash_access_key
+server/.env
+OPENWEATHER_API_KEY=your_openweathermap_key
 
 📤 Export Formats
 From the UI, you can export stored weather data as:
@@ -79,14 +79,11 @@ Markdown
 
 PDF
 
-🎥 Demo Video
-(Optional) Add link to a short video walkthrough here (Google Drive / YouTube / Loom)
-
 👤 Author
 Suraj Kumar Singh
 For the Product Manager Accelerator Internship – Software Engineer (AI/ML) Assessment
 
-LinkedIn: PM Accelerator
+LinkedIn: [PM Accelerator](https://www.linkedin.com/school/pmaccelerator/)
 
 🛡️ License
 This project is open-source and free to use for educational purposes.
